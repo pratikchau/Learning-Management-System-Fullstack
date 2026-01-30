@@ -4,10 +4,9 @@ import subprocess
 app = Flask(__name__)
 
 PROJECT_PATH = "/home/Pratik/Myprojects/GithubActionLms/Learning-Management-System-Fullstack"
-DOCKER_COMPOSE_FILE = "docker-compose.yml"  # explicit file to avoid .yml-bak issues
+DOCKER_COMPOSE_FILE = "docker-compose.yml"
 
 def run_command(cmd_list, cwd=PROJECT_PATH):
-    """Run a shell command and print output/errors."""
     try:
         print(f"Running command: {' '.join(cmd_list)} in {cwd}")
         subprocess.run(cmd_list, cwd=cwd, check=True)
@@ -20,13 +19,13 @@ def run_command(cmd_list, cwd=PROJECT_PATH):
 def deploy():
     try:
         print("🔹 Stopping old containers...")
-        run_command(["docker-compose", "-f", DOCKER_COMPOSE_FILE, "down"])
+        run_command(["docker", "compose", "-f", DOCKER_COMPOSE_FILE, "down"])
 
         print("🔹 Building and starting containers...")
-        run_command(["docker-compose", "-f", DOCKER_COMPOSE_FILE, "up", "-d", "--build"])
+        run_command(["docker", "compose", "-f", DOCKER_COMPOSE_FILE, "up", "-d", "--build"])
 
         print("🔹 Running Django migrations...")
-        run_command(["docker-compose", "-f", DOCKER_COMPOSE_FILE, "exec", "django", "python", "manage.py", "migrate"])
+        run_command(["docker", "compose", "-f", DOCKER_COMPOSE_FILE, "exec", "django", "python", "manage.py", "migrate"])
 
         print("✅ Deployment complete!")
         return "Deployment triggered!", 200
