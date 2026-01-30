@@ -1,171 +1,77 @@
-name: CI/CD Pipeline for LMS App
+name: Django Docker CI/CD
 
 on:
   push:
-    branches: [master]
+    branches:
+      - main
   pull_request:
-    branches: [master]
+    branches:
+      - main
 
-################################################################################
-# 1 · Formatting & Lint 🔧
-################################################################################
 jobs:
-  formatting:
-    name: "🔧 Format & Lint"
+  # Continuous Integration
+  ci:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - uses: actions/setup-node@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: 18
+          python-version: 3.11
 
-      - run: npm ci
-      - run: npm run format
-      - run: npm run lint
-
-  ################################################################################
-  # 2 · Backend & Frontend Tests ( parallel ) ✅ 🌐
-  ################################################################################
-  backend-tests:
-    name: "✅ Backend (Py 3.12) Tests"
-    runs-on: ubuntu-latest
-    needs: formatting
-
-    env:
-      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-      DJANGO_DEBUG: ${{ secrets.DJANGO_DEBUG }}
-      DJANGO_ALLOWED_HOSTS: ${{ secrets.DJANGO_ALLOWED_HOSTS }}
-      MONGO_DB_URI: ${{ secrets.MONGO_DB_URI }}
-      MONGO_DB_USERNAME: ${{ secrets.MONGO_DB_USERNAME }}
-      MONGO_DB_PASSWORD: ${{ secrets.MONGO_DB_PASSWORD }}
-      REDIS_LOCATION: ${{ secrets.REDIS_LOCATION }}
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Use Python 3.12
-        uses: actions/setup-python@v4
+      - name: Cache pip
+        uses: actions/cache@v3
         with:
-          python-version: "3.12"
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
 
-      - name: Install backend deps
+      - name: Install dependencies
         run: |
-          cd LMS-Backend
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest
-      - name: Run pytest
-        run: cd LMS-Backend && pytest -q
 
-  frontend-tests:
-    name: "🌐 Frontend (Node 18) Tests"
-    runs-on: ubuntu-latest
-    needs: formatting
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      - run: cd LMS-Frontend/app && npm ci
-      - run: cd LMS-Frontend/app && npm test
-
-  ################################################################################
-  # 3 · Coverage 📊
-  ################################################################################
-  coverage:
-    name: "📊 Coverage Artifacts"
-    runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests]
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      - run: cd LMS-Frontend/app && npm ci
-      - name: Generate Jest coverage
-        run: cd LMS-Frontend/app && npm run coverage
-
-      - name: Upload Jest coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-coverage
-          path: frontend/coverage
-
-  ################################################################################
-  # 4 · Docker 🐳  (build & push images to GHCR)
-  ################################################################################
-  docker:
-    name: "🐳 Build & Push Docker Images"
-    runs-on: ubuntu-latest
-    needs: coverage
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & push backend image
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          file: ./LMS-Backend/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/lms-backend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/lms-backend:latest
-
-      - name: Build & push frontend image
-        uses: docker/build-push-action@v3
-        with:
-          context: ./LMS-Frontend
-          file: ./LMS-Frontend/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/lms-frontend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/lms-frontend:latest
-
-  ################################################################################
-  # 5 · Deploy 🚀
-  ################################################################################
-  deploy:
-    name: "🚀 Deploy"
-    runs-on: ubuntu-latest
-    needs: docker
-
-    steps:
-      - name: Backend → Render
+      - name: Lint with flake8
         run: |
-          echo "🔄 Deploying backend to Render…"
-          sleep 2
-          echo "✅ Backend deployed to Render!"
-      - name: Frontend → Vercel
+          pip install flake8
+          flake8 .
+
+      - name: Run Django tests
         run: |
-          echo "🔄 Deploying frontend to Vercel…"
-          sleep 2
-          echo "✅ Frontend deployed to Vercel!"
+          python manage.py test
 
-  ################################################################################
-  # 6 · All Done 🎉
-  ################################################################################
-  complete:
-    name: "🎉 All Done"
+      - name: Build Docker images (optional)
+        run: docker-compose build
+
+  # Continuous Deployment
+  cd:
     runs-on: ubuntu-latest
-    needs: deploy
-
+    needs: ci
     steps:
-      - run: echo "🎉 CI/CD pipeline finished successfully – all done!"
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.LOCAL_SSH_KEY }}
+
+      - name: Deploy to Local via Serveo
+        run: |
+          ssh -o StrictHostKeyChecking=no -p 2222 user@username.serveo.net << 'EOF'
+            echo "Starting Deployment..."
+
+            cd /home/Pratik/Myprojects/GithubActionLms/Learning-Management-System-Fullstack
+
+            # Stop containers
+            docker-compose down
+
+            # Optional: Rebuild images if Dockerfile changed
+            docker-compose build
+
+            # Start containers
+            docker-compose up -d
+
+            # Run Django migrations
+            docker-compose exec django python manage.py migrate
+
+            echo "Deployment Complete!"
+          EOF
