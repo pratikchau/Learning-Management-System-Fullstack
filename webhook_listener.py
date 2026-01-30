@@ -7,13 +7,8 @@ PROJECT_PATH = "/home/Pratik/Myprojects/GithubActionLms/Learning-Management-Syst
 DOCKER_COMPOSE_FILE = "docker-compose.yml"
 
 def run_command(cmd_list, cwd=PROJECT_PATH):
-    try:
-        print(f"Running command: {' '.join(cmd_list)} in {cwd}")
-        subprocess.run(cmd_list, cwd=cwd, check=True)
-        print("✅ Command completed successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Command failed: {e}")
-        raise e
+    print(f"Running command: {' '.join(cmd_list)} in {cwd}")
+    subprocess.run(cmd_list, cwd=cwd, check=True)
 
 @app.route('/deploy', methods=['POST'])
 def deploy():
@@ -25,12 +20,17 @@ def deploy():
         run_command(["docker", "compose", "-f", DOCKER_COMPOSE_FILE, "up", "-d", "--build"])
 
         print("🔹 Running Django migrations...")
-        run_command(["docker", "compose", "-f", DOCKER_COMPOSE_FILE, "exec", "django", "python", "manage.py", "migrate"])
+        run_command([
+            "docker", "compose", "-f", DOCKER_COMPOSE_FILE,
+            "exec", "django", "python", "manage.py", "migrate"
+        ])
 
         print("✅ Deployment complete!")
         return "Deployment triggered!", 200
+
     except Exception as e:
+        print(e)
         return f"Deployment failed: {e}", 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
