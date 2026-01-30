@@ -1,32 +1,28 @@
-##
-## ─────────────────────────────────────────────────────────
-##  Angular 18 Front-end – multi-stage production image
-## ─────────────────────────────────────────────────────────
-##
-
-# ── Builder stage ────────────────────────────────────────
-FROM node:18.19-alpine AS builder
+# Stage 1: Build Angular app
+FROM node:18 as build
 
 WORKDIR /app
 
-# only the manifests first → better layer-caching
+# Copy package files from app folder
 COPY app/package*.json ./
-RUN npm ci --quiet
 
-# copy the actual source and compile
-COPY app/ ./
-RUN npm run build -- --configuration production
+# Install dependencies
+RUN npm install
 
-# ── Runtime stage (Nginx) ────────────────────────────────
-FROM nginx:1.27-alpine
+# Copy all Angular source code
+COPY app/ .
 
-# remove the default landing page
-RUN rm -rf /usr/share/nginx/html/*
+# Build the app
+RUN npm run build --prod
 
-# copy the compiled artefacts from the previous stage
-## (the build ends up in   /app/dist/<project-name> )
-# if your Angular project name differs, just adjust the * below.
-COPY --from=builder /app/dist/* /usr/share/nginx/html/
+# Stage 2: Serve with Nginx
+FROM nginx:alpine
 
+# Copy build output to Nginx folder
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Expose port 80
 EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]
+
